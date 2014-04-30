@@ -1,0 +1,65 @@
+#!/bin/bash
+
+### REMEMBER:
+# INPUT   : Inbound traffic destined for this host
+# OUTPUT  : Outbound traffic originating from this host
+# FORWARD : Traffic passing through this host (both other origin and destination)
+
+IPT="/sbin/iptables"
+CONFD="/etc/firewall.d" # Rule file directory
+
+### FUNCTIONS
+# Function to remove all rules and chains
+remove_all()
+{
+    ${IPT} -F
+    ${IPT} -X
+    ${IPT} -t nat -F
+    ${IPT} -t nat -X
+    ${IPT} -t mangle -F
+    ${IPT} -t mangle -X
+}
+
+# Function to check if a chain exists
+chain_exists()
+{
+    [ $# -lt 1 -o $# -gt 2 ] && {
+        echo "Usage: chain_exists <chain_name> [table]" >&2
+        return 1
+    }
+    local chain_name="$1" ; shift
+    [ $# -eq 1 ] && local table="--table $1"
+    iptables $table -n --list "$chain_name" >/dev/null 2>&1
+}
+
+### WHERE IT HAPPENS
+case "$1" in
+    start)
+        # Policies of default chains are set to ACCEPT to avoid lock out in case of error
+        ${IPT} -P INPUT ACCEPT
+        ${IPT} -P OUTPUT ACCEPT
+        ${IPT} -P FORWARD ACCEPT
+
+        # Remove any previous rules or chains
+        remove_all
+
+        # Load all rules
+        echo -e "\nLoading rules.."
+        for file in ${CONFD}/*.rules
+        do
+            if [ -f $file ]; then
+                echo ${file} && logger "Firewall loading: ${file}"
+                source ${file}
+            fi
+        done
+
+        # Drop everything not previously matched in default chains
+        ${IPT} -A INPUT -j DROP
+        ${IPT} -A OUTPUT -j DROP
+        ${IPT} -A FORWARD -j DROP
+        ;;
+    stop)
+        # Remove any rules or chains
+        remove_all
+        ;;
+esac
