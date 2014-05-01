@@ -32,34 +32,49 @@ chain_exists()
     iptables $table -n --list "$chain_name" >/dev/null 2>&1
 }
 
+# 
+start()
+{
+    # Policies of default chains are set to ACCEPT to avoid lock out in case of error
+    ${IPT} -P INPUT ACCEPT
+    ${IPT} -P OUTPUT ACCEPT
+    ${IPT} -P FORWARD ACCEPT
+
+    # Remove any previous rules or chains
+    remove_all
+
+    # Load all rules
+    echo -e "\nLoading rules.."
+    for file in ${CONFD}/*.rules
+    do
+        if [ -f $file ]; then
+            echo ${file} && logger "Firewall loading: ${file}"
+            source ${file}
+        fi
+    done
+
+    # Drop everything not previously matched in default chains
+    ${IPT} -A INPUT -j DROP
+    ${IPT} -A OUTPUT -j DROP
+    ${IPT} -A FORWARD -j DROP
+}
+
 ### WHERE IT HAPPENS
 case "$1" in
     start)
-        # Policies of default chains are set to ACCEPT to avoid lock out in case of error
-        ${IPT} -P INPUT ACCEPT
-        ${IPT} -P OUTPUT ACCEPT
-        ${IPT} -P FORWARD ACCEPT
-
-        # Remove any previous rules or chains
-        remove_all
-
-        # Load all rules
-        echo -e "\nLoading rules.."
-        for file in ${CONFD}/*.rules
-        do
-            if [ -f $file ]; then
-                echo ${file} && logger "Firewall loading: ${file}"
-                source ${file}
-            fi
-        done
-
-        # Drop everything not previously matched in default chains
-        ${IPT} -A INPUT -j DROP
-        ${IPT} -A OUTPUT -j DROP
-        ${IPT} -A FORWARD -j DROP
+        start
         ;;
     stop)
         # Remove any rules or chains
         remove_all
+        ;;
+    restart)
+        start
+        ;;
+    reload)
+        start
+        ;;
+    *)
+        echo "Usage: firewall {start|stop|restart|reload}"
         ;;
 esac
