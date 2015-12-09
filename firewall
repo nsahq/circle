@@ -1,65 +1,135 @@
 #!/bin/bash
 
-### REMEMBER:
-# INPUT   : Inbound traffic destined for this host
-# OUTPUT  : Outbound traffic originating from this host
-# FORWARD : Traffic passing through this host (both other origin and destination)
+# INPUT: Inbound traffic destined for this host
+# OUTPUT: Outbound traffic originating from this host
+# FORWARD: Traffic passing through this host (both other origin and destination)
 
-IPT="/sbin/iptables"
-CONFD="/etc/firewall.d" # Rule file directory
+IPT4="/sbin/iptables"
+IPT6="/sbin/ip6tables"
+EBT="/sbin/ebtables"
+CONFD="/etc/firewall.d"
 
-### FUNCTIONS
-# Function to remove all rules and chains
+VERBOSE=true
+LOG_ILLEGAL=false
+LOG_LEVEL=4
+
+if [ "$EUID" -ne 0 ]
+then
+    echo "IPTABLES requires root privileges, exiting"
+    exit 1
+fi
+
+debug(){ log 6 "DEBUG: $1"; }
+note(){ log 5 "NOTICE: $1"; }
+info(){ log 4 "INFO: $1"; }
+warn(){ log 3 "WARNING: $1"; }
+err(){ log 2 "ERROR: $1"; }
+critical(){ log 1 "CRITICAL: $1"; }
+
+log()
+{
+    if [ $1 -le "${LOG_LEVEL}" ]
+    then
+        logger -t ipt-firewall "${2}"
+    fi
+}
+
+# Remove all rules and chains
 remove_all()
 {
-    ${IPT} -F
-    ${IPT} -X
-    ${IPT} -t nat -F
-    ${IPT} -t nat -X
-    ${IPT} -t mangle -F
-    ${IPT} -t mangle -X
+    info "removing firewall rules"
+    # IPv4
+    ${IPT4} -F
+    ${IPT4} -X
+    ${IPT4} -t nat -F
+    ${IPT4} -t nat -X
+    ${IPT4} -t mangle -F
+    ${IPT4} -t mangle -X
+
+    # IPv6
+    ${IPT6} -F
+    ${IPT6} -X
+    ${IPT6} -t nat -F
+    ${IPT6} -t nat -X
+    ${IPT6} -t mangle -F
+    ${IPT6} -t mangle -X
 }
 
-# Function to check if a chain exists
-chain_exists()
+# Load rules
+load()
 {
-    [ $# -lt 1 -o $# -gt 2 ] && {
-        echo "Usage: chain_exists <chain_name> [table]" >&2
-        return 1
-    }
-    local chain_name="$1" ; shift
-    [ $# -eq 1 ] && local table="--table $1"
-    iptables $table -n --list "$chain_name" >/dev/null 2>&1
+    if [ ! $# -eq 1 ]
+    then
+        [ ${VERBOSE} = true ] && echo "attempted to load rule, but no file name was given"
+        error "attempted to load rules, but no file name was given"
+        exit 1
+    fi
+
+    # Check for illegal characters
+    if grep -qEe '.*;.*' -Ee '\$\(.*\)' -Ee '([&]|[|])' -Ee '[\`]' ${1}
+    then
+        [ ${VERBOSE} = true ] && echo "illegal characters detected in file."
+        warn "illegal characters detected in file '${1}'"
+    fi
+
+    if [ ${LOG_ILLEGAL} = true ]
+    then
+        # Log illegal lines
+        while read -r line
+        do
+            warn "illegal characters detected in line '${line}'"
+        done < <(grep -Ee '.*;.*' -Ee '\$\(.*\)' -Ee '([&]|[|])' -Ee '[\`]' ${1})
+    fi
+
+    # Load lines that seem to be legal
+    while read -r line
+    do
+        debug "loading line '${line}'"
+        eval ${line}
+    done < <(grep -e "^\${" ${1}|grep -vEe ".*;.*" -vEe "\$\(.*\)" -vEe "([&]|[|])" -vEe "[\`]")
 }
 
-# 
 start()
 {
-    # Policies of default chains are set to ACCEPT to avoid lock out in case of error
-    ${IPT} -P INPUT ACCEPT
-    ${IPT} -P OUTPUT ACCEPT
-    ${IPT} -P FORWARD ACCEPT
+    # Avoid lock out in case of error
+    ${IPT4} -P INPUT ACCEPT
+    ${IPT4} -P OUTPUT ACCEPT
+    ${IPT4} -P FORWARD ACCEPT
+    # IPv6
+    ${IPT6} -P INPUT ACCEPT
+    ${IPT6} -P OUTPUT ACCEPT
+    ${IPT6} -P FORWARD ACCEPT
 
     # Remove any previous rules or chains
     remove_all
 
+    [ ${VERBOSE} = true ] && echo "starting ipt-firewall.."
+    info "setting up firewall"
+
     # Load all rules
-    echo -e "\nLoading rules.."
     for file in ${CONFD}/*.rules
     do
-        if [ -f $file ]; then
-            echo ${file} && logger "Firewall loading: ${file}"
-            source ${file}
+        if [ -f $file ]
+        then
+            [ ${VERBOSE} = true ] && echo "ipt-firewall loading file '${file}'"
+            note "loading rules file '${file}'"
+            load ${file}
         fi
     done
 
     # Drop everything not previously matched in default chains
-    ${IPT} -A INPUT -j DROP
-    ${IPT} -A OUTPUT -j DROP
-    ${IPT} -A FORWARD -j DROP
+    ${IPT4} -A INPUT -j DROP
+    ${IPT4} -A OUTPUT -j DROP
+    ${IPT4} -A FORWARD -j DROP
+    # IPv6
+    ${IPT6} -A INPUT -j DROP
+    ${IPT6} -A OUTPUT -j DROP
+    ${IPT6} -A FORWARD -j DROP
+
+    [ ${VERBOSE} = true ] && echo "ipt-firewall started"
+    note "firewall rules finished loaded"
 }
 
-### WHERE IT HAPPENS
 case "$1" in
     start)
         start
@@ -78,3 +148,4 @@ case "$1" in
         echo "Usage: firewall {start|stop|restart|reload}"
         ;;
 esac
+
