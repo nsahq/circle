@@ -3,6 +3,22 @@ ipt-firewall
 
 Simple IPTABLES firewall control structure.
 
+```
+Usage: firewall [options] <command>
+
+    -6        enable IP6TABLES
+    -e        enable EBTABLES
+    -i        log illegal lines in source files
+    -l INT    log level (2-6), default 4
+    -s        do not print firewall output
+    -h        print this help message
+
+Commands:
+    start     clear and load firewall rules
+    stop      clear rules
+    restart   alias for 'start'
+```
+
 Rules
 -----
 
