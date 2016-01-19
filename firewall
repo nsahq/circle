@@ -4,33 +4,85 @@
 # OUTPUT: Outbound traffic originating from this host
 # FORWARD: Traffic passing through this host (both other origin and destination)
 
+set -o errexit
+set -o pipefail
+set -o nounset
+
 IPT4="/sbin/iptables"
-IPT6="/sbin/ip6tables"
-EBT="/sbin/ebtables"
 CONFD="/etc/firewall.d"
 
-VERBOSE=true
-LOG_ILLEGAL=false
-LOG_LEVEL=4
+use_ebt=false
+use_ipt6=false
 
-if [ "$EUID" -ne 0 ]
-then
-    echo "IPTABLES requires root privileges, exiting"
-    exit 1
-fi
-
-debug(){ log 6 "DEBUG: $1"; }
-note(){ log 5 "NOTICE: $1"; }
-info(){ log 4 "INFO: $1"; }
-warn(){ log 3 "WARNING: $1"; }
-err(){ log 2 "ERROR: $1"; }
-critical(){ log 1 "CRITICAL: $1"; }
+verbose=true
+log_illegal=false
+log_level=4
 
 log()
 {
-    if [ $1 -le "${LOG_LEVEL}" ]
+    if [ ${1} -le "${log_level}" ]
     then
         logger -t ipt-firewall "${2}"
+    fi
+}
+
+debug(){ log 6 "DEBUG: ${1}"; }
+note(){ log 5 "NOTICE: ${1}"; }
+info(){ log 4 "INFO: ${1}"; }
+warn(){ log 3 "WARNING: ${1}"; }
+err(){ log 2 "ERROR: ${1}"; }
+
+help()
+{
+    echo "Usage: $(basename ${BASH_SOURCE[0]}) [options] <command>"
+    echo ""
+    echo "    -6        enable IP6TABLES"
+    echo "    -e        enable EBTABLES"
+    echo "    -i        log illegal lines in source files"
+    echo "    -l INT    log level (2-6), default 4"
+    echo "    -s        do not print firewall output"
+    echo "    -h        print this help message"
+    echo ""
+    echo "Commands:"
+    echo "    start     clear and load firewall rules"
+    echo "    stop      clear rules"
+    echo "    restart   alias for 'start'"
+}
+
+sanity()
+{
+    # Must be root
+    if [ "${EUID}" -ne 0 ]
+    then
+        echo "firewall requires root privileges, exiting"
+        err "firewall requires root privileges, aborting"
+        exit 1
+    fi
+
+    # Make sure conf.d directory exists
+    if [ ! -d "${CONFD}" ]
+    then
+        echo "configuration directory '${CONFD}' does not exist"
+        err "configuration directory '${CONFD}' does not exist"
+        exit 1
+    fi
+
+    # Make sure IPTABLES and EBTABLES are present
+    if [ ! -f "${IPT4}" ]
+    then
+        [ ${verbose} = true ] && echo "${IPT} missing"
+        err "${IPT} missing"
+        exit 1
+    elif [ ${use_ipt6} = true ] && [ ! -f "${IPT6}" ]
+    then
+        [ ${verbose} = true ] && echo "${IPT6} missing"
+        err "${IPT6} missing"
+        exit 1
+    elif [ ${use_ebt} = true ] && [ ! -f "${EBT}" ]
+    then
+        [ ${verbose} = true ] && echo "${EBT} missing"
+        err "${EBT} missing"
+        exit 1
     fi
 }
 
@@ -47,12 +99,15 @@ remove_all()
     ${IPT4} -t mangle -X
 
     # IPv6
-    ${IPT6} -F
-    ${IPT6} -X
-    ${IPT6} -t nat -F
-    ${IPT6} -t nat -X
-    ${IPT6} -t mangle -F
-    ${IPT6} -t mangle -X
+    if [ ${use_ipt6} = true ]
+    then
+        ${IPT6} -F
+        ${IPT6} -X
+        ${IPT6} -t nat -F
+        ${IPT6} -t nat -X
+        ${IPT6} -t mangle -F
+        ${IPT6} -t mangle -X
+    fi
 }
 
 # Load rules
@@ -60,7 +115,7 @@ load()
 {
     if [ ! $# -eq 1 ]
     then
-        [ ${VERBOSE} = true ] && echo "attempted to load rule, but no file name was given"
+        [ ${verbose} = true ] && echo "attempted to load rule, but no file name was given"
         error "attempted to load rules, but no file name was given"
         exit 1
     fi
@@ -68,11 +123,11 @@ load()
     # Check for illegal characters
     if grep -qEe '.*;.*' -Ee '\$\(.*\)' -Ee '([&]|[|])' -Ee '[\`]' ${1}
     then
-        [ ${VERBOSE} = true ] && echo "illegal characters detected in file."
+        [ ${verbose} = true ] && echo "illegal characters detected in file."
         warn "illegal characters detected in file '${1}'"
     fi
 
-    if [ ${LOG_ILLEGAL} = true ]
+    if [ ${log_illegal} = true ]
     then
         # Log illegal lines
         while read -r line
@@ -91,27 +146,32 @@ load()
 
 start()
 {
+    sanity
+
     # Avoid lock out in case of error
     ${IPT4} -P INPUT ACCEPT
     ${IPT4} -P OUTPUT ACCEPT
     ${IPT4} -P FORWARD ACCEPT
     # IPv6
-    ${IPT6} -P INPUT ACCEPT
-    ${IPT6} -P OUTPUT ACCEPT
-    ${IPT6} -P FORWARD ACCEPT
+    if [ ${use_ipt6} = true ]
+    then
+        ${IPT6} -P INPUT ACCEPT
+        ${IPT6} -P OUTPUT ACCEPT
+        ${IPT6} -P FORWARD ACCEPT
+    fi
 
     # Remove any previous rules or chains
     remove_all
 
-    [ ${VERBOSE} = true ] && echo "starting ipt-firewall.."
+    [ ${verbose} = true ] && echo "starting ipt-firewall.."
     info "setting up firewall"
 
     # Load all rules
     for file in ${CONFD}/*.rules
     do
-        if [ -f $file ]
+        if [ -f "${file}" ]
         then
-            [ ${VERBOSE} = true ] && echo "ipt-firewall loading file '${file}'"
+            [ ${verbose} = true ] && echo "ipt-firewall loading file '${file}'"
             note "loading rules file '${file}'"
             load ${file}
         fi
@@ -122,15 +182,64 @@ start()
     ${IPT4} -A OUTPUT -j DROP
     ${IPT4} -A FORWARD -j DROP
     # IPv6
-    ${IPT6} -A INPUT -j DROP
-    ${IPT6} -A OUTPUT -j DROP
-    ${IPT6} -A FORWARD -j DROP
+    if [ ${use_ipt6} = true ]
+    then
+        ${IPT6} -A INPUT -j DROP
+        ${IPT6} -A OUTPUT -j DROP
+        ${IPT6} -A FORWARD -j DROP
+    fi
 
-    [ ${VERBOSE} = true ] && echo "ipt-firewall started"
-    note "firewall rules finished loaded"
+    [ ${verbose} = true ] && echo "ipt-firewall started"
+    note "firewall rules finished loading"
 }
 
-case "$1" in
+# getopt index variable
+OPTIND=1
+while getopts ":6eil:sh" opt; do
+    case $opt in
+        6)
+            use_ipt6=true
+            IPT6="/sbin/ip6tables"
+            ;;
+        e)
+            use_ebt=true
+            EBT="/sbin/ebtables"
+            ;;
+        i)
+            log_illegal=true
+            ;;
+        l)
+            log_level=${OPTARG}
+            ;;
+        s)
+            verbose=false
+            ;;
+        h)
+            help
+            exit 0
+            ;;
+        \?)
+            echo "Invalid option: -${OPTARG}" >&2
+            exit 1
+            ;;
+        :)
+            echo "Option -${OPTARG} requires an argument." >&2
+            exit 1
+            ;;
+    esac
+done
+
+# Remove all option arguments
+shift $(($OPTIND - 1))
+
+if [ $# = 0 ]
+then
+    echo "no command specified"
+    help
+    exit 1
+fi
+
+case "${1}" in
     start)
         start
         ;;
@@ -141,11 +250,8 @@ case "$1" in
     restart)
         start
         ;;
-    reload)
-        start
-        ;;
     *)
-        echo "Usage: firewall {start|stop|restart|reload}"
+        echo "Usage: firewall {start|stop|restart}"
         ;;
 esac
 
