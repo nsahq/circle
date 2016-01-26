@@ -10,6 +10,7 @@ set -o nounset
 
 IPT4="/sbin/iptables"
 CONFD="/etc/firewall.d"
+CEXCL="chains.exclude"
 
 use_ebt=false
 use_ipt6=false
@@ -86,27 +87,74 @@ sanity()
     fi
 }
 
+contains()
+{
+    local needle=$1
+    declare -a haystack=("${!2}")
+
+    for item in ${haystack[@]}
+    do
+        if [ "$needle" == "$item" ]
+        then
+            return 0
+        fi
+    done
+    return 1
+}
+
+clear_chains()
+{
+    local chains=()
+    if [ $1 = "ipt4" ]
+    then
+        chains=$(${IPT4} -L|grep Chain|awk '{print $2}')
+    elif [ $1 = "ipt6"]
+    then
+        chains=$(${IPT6} -L|grep Chain|awk '{print $2}')
+    else
+        err "clear_chains() cannot handle '$1'"
+        exit 1
+    fi
+
+    local exclude=()
+    readarray -t exclude < "${CONFD}/${!1}-${CEXCL}"
+    exclude+=("INPUT")
+    exclude+=("OUTPUT")
+    exclude+=("FORWARD")
+
+    for chain in ${chains[@]}
+    do
+        if contains $chain exclude[@]
+        then
+            info "excluding chain ${chain}"
+            break
+        fi
+        debug "flushing $chain"
+        ${tool} -F $chain
+        debug "deleting $chain"
+        ${tool} -X $chain
+    done
+}
+
 # Remove all rules and chains
 remove_all()
 {
     info "removing firewall rules"
     # IPv4
-    ${IPT4} -F
-    ${IPT4} -X
-    ${IPT4} -t nat -F
-    ${IPT4} -t nat -X
-    ${IPT4} -t mangle -F
-    ${IPT4} -t mangle -X
+    clear_chains "ipt4"
+    #${IPT4} -t nat -F
+    #${IPT4} -t nat -X
+    #${IPT4} -t mangle -F
+    #${IPT4} -t mangle -X
 
     # IPv6
     if [ ${use_ipt6} = true ]
     then
-        ${IPT6} -F
-        ${IPT6} -X
-        ${IPT6} -t nat -F
-        ${IPT6} -t nat -X
-        ${IPT6} -t mangle -F
-        ${IPT6} -t mangle -X
+        clear_chains "ipt6"
+        #${IPT6} -t nat -F
+        #${IPT6} -t nat -X
+        #${IPT6} -t mangle -F
+        #${IPT6} -t mangle -X
     fi
 }
 
