@@ -10,6 +10,7 @@ set -o nounset
 
 IPT4="/sbin/iptables"
 CONFD="/etc/firewall.d"
+CEXCL="chains.exclude"
 
 use_ebt=false
 use_ipt6=false
@@ -86,27 +87,97 @@ sanity()
     fi
 }
 
+contains()
+{
+    local needle=$1
+    declare -a haystack=("${!2}")
+
+    for item in ${haystack[@]}
+    do
+        if [ "$needle" == "$item" ]
+        then
+            return 0
+        fi
+    done
+    return 1
+}
+
+clear_chains()
+{
+    local chains=()
+    if [ $1 = "ipt4" ]
+    then
+        chains=$(${IPT4} -L|grep Chain|awk '{print $2}')
+        local tool=${IPT4}
+    elif [ $1 = "ipt6"]
+    then
+        chains=$(${IPT6} -L|grep Chain|awk '{print $2}')
+        local tool=${IPT6}
+    else
+        err "clear_chains() cannot handle '$1'"
+        exit 1
+    fi
+
+    local exclude=()
+    if [ -f "${CONFD}/${1}-${CEXCL}" ]
+    then
+        readarray -t exclude < "${CONFD}/${1}-${CEXCL}"
+    fi
+
+    # Can't delete built-in chains, but always flush
+    exclude+=("INPUT")
+    exclude+=("OUTPUT")
+    exclude+=("FORWARD")
+    ${tool} -F INPUT
+    ${tool} -F OUTPUT
+    ${tool} -F FORWARD
+
+    ${tool} -t nat -F PREROUTING
+    ${tool} -t nat -F INPUT
+    ${tool} -t nat -F OUTPUT
+    ${tool} -t nat -F POSTROUTING
+    ${tool} -t mangle -F PREROUTING
+    ${tool} -t mangle -F INPUT
+    ${tool} -t mangle -F OUTPUT
+    ${tool} -t mangle -F FORWARD
+    ${tool} -t mangle -F POSTROUTING
+
+    for chain in ${chains[@]}
+    do
+        if contains ${chain} exclude[@]
+        then
+            [ ${verbose} = true ] && echo "excluding chain '${chain}'"
+            info "excluding chain '${chain}'"
+            continue
+        fi
+        [ ${verbose} = true ] && echo "deleting chain '${chain}'"
+        debug "flushing ${chain}"
+        ${tool} -F ${chain}
+        debug "deleting ${chain}"
+        ${tool} -X ${chain}
+    done
+}
+
 # Remove all rules and chains
 remove_all()
 {
+    [ ${verbose} = true ] && echo "removing previous firewall rules.."
     info "removing firewall rules"
     # IPv4
-    ${IPT4} -F
-    ${IPT4} -X
-    ${IPT4} -t nat -F
-    ${IPT4} -t nat -X
-    ${IPT4} -t mangle -F
-    ${IPT4} -t mangle -X
+    clear_chains "ipt4"
+    #${IPT4} -t nat -F
+    #${IPT4} -t nat -X
+    #${IPT4} -t mangle -F
+    #${IPT4} -t mangle -X
 
     # IPv6
     if [ ${use_ipt6} = true ]
     then
-        ${IPT6} -F
-        ${IPT6} -X
-        ${IPT6} -t nat -F
-        ${IPT6} -t nat -X
-        ${IPT6} -t mangle -F
-        ${IPT6} -t mangle -X
+        clear_chains "ipt6"
+        #${IPT6} -t nat -F
+        #${IPT6} -t nat -X
+        #${IPT6} -t mangle -F
+        #${IPT6} -t mangle -X
     fi
 }
 
@@ -163,7 +234,7 @@ start()
     # Remove any previous rules or chains
     remove_all
 
-    [ ${verbose} = true ] && echo "starting ipt-firewall.."
+    [ ${verbose} = true ] && echo "setting up ipt-firewall.."
     info "setting up firewall"
 
     # Load all rules
@@ -189,7 +260,7 @@ start()
         ${IPT6} -A FORWARD -j DROP
     fi
 
-    [ ${verbose} = true ] && echo "ipt-firewall started"
+    [ ${verbose} = true ] && echo "ipt-firewall finished loading"
     note "firewall rules finished loading"
 }
 
