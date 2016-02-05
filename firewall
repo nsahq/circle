@@ -59,7 +59,7 @@ display_help()
     echo "    -I STR    Set INPUT chain policy"
     echo "    -F STR    Set FORWARD chain policy"
     echo "    -O STR    Set OUTPUT chain policy"
-    echo "    -h        Print this help message and exit"
+    echo "    -h        Show this help message and exit"
     echo "    -v        Show version and exit"
     echo ""
     echo "Commands:"
