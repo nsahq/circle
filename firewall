@@ -109,7 +109,7 @@ clear_chains()
     then
         chains=$(${IPT4} -L|grep Chain|awk '{print $2}')
         local tool=${IPT4}
-    elif [ $1 = "ipt6"]
+    elif [ $1 = "ipt6" ]
     then
         chains=$(${IPT6} -L|grep Chain|awk '{print $2}')
         local tool=${IPT6}
@@ -125,6 +125,7 @@ clear_chains()
     fi
 
     # Can't delete built-in chains, but always flush
+    standard=("INPUT" "OUTPUT" "FORWARD")
     exclude+=("INPUT")
     exclude+=("OUTPUT")
     exclude+=("FORWARD")
@@ -146,8 +147,11 @@ clear_chains()
     do
         if contains ${chain} exclude[@]
         then
-            [ ${verbose} = true ] && echo "excluding chain '${chain}'"
-            info "excluding chain '${chain}'"
+            if ! contains ${chain} standard[@]
+            then
+                [ ${verbose} = true ] && echo "excluding chain '${chain}'"
+                info "excluding chain '${chain}'"
+            fi
             continue
         fi
         [ ${verbose} = true ] && echo "deleting chain '${chain}'"
