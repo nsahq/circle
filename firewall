@@ -8,9 +8,14 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
-IPT4="/sbin/iptables"
+VERSION="1.0.0"
+
 CONFD="/etc/firewall.d"
 CEXCL="chains.exclude"
+
+ipt4="/sbin/iptables"
+ipt6="null"
+ebt="null"
 
 in_policy="DROP"
 out_policy="DROP"
@@ -19,9 +24,13 @@ forward_policy="DROP"
 use_ebt=false
 use_ipt6=false
 
-verbose=true
+verbose=false
+silent=false
 log_illegal=false
 log_level=4
+
+
+null(){ :; }
 
 log()
 {
@@ -37,16 +46,21 @@ info(){ log 4 "INFO: ${1}"; }
 warn(){ log 3 "WARNING: ${1}"; }
 err(){ log 2 "ERROR: ${1}"; }
 
-help()
+display_help()
 {
     echo "Usage: $(basename ${BASH_SOURCE[0]}) [options] <command>"
     echo ""
-    echo "    -6        enable IP6TABLES"
-    echo "    -e        enable EBTABLES"
-    echo "    -i        log illegal lines in source files"
-    echo "    -l INT    log level (2-6), default 4"
-    echo "    -s        do not print firewall output"
-    echo "    -h        print this help message"
+    echo "    -6        Enable IP6TABLES"
+    echo "    -e        Enable EBTABLES"
+    echo "    -i        Log illegal lines in source files"
+    echo "    -l INT    Log level (2-6), default 4"
+    echo "    -V        Be verbose"
+    echo "    -s        Be silent"
+    echo "    -I STR    Set INPUT chain policy"
+    echo "    -F STR    Set FORWARD chain policy"
+    echo "    -O STR    Set OUTPUT chain policy"
+    echo "    -h        Print this help message and exit"
+    echo "    -v        Show version and exit"
     echo ""
     echo "Commands:"
     echo "    start     clear and load firewall rules"
@@ -54,12 +68,17 @@ help()
     echo "    restart   alias for 'start'"
 }
 
+display_version()
+{
+    echo "$(basename ${BASH_SOURCE[0]}) v${VERSION}"
+}
+
 sanity()
 {
     # Must be root
     if [ "${EUID}" -ne 0 ]
     then
-        echo "firewall requires root privileges, exiting"
+        [ ${silent} = false ] && echo "firewall requires root privileges, exiting" >&2
         err "firewall requires root privileges, aborting"
         exit 1
     fi
@@ -67,38 +86,38 @@ sanity()
     # Make sure conf.d directory exists
     if [ ! -d "${CONFD}" ]
     then
-        echo "configuration directory '${CONFD}' does not exist"
+        [ ${silent} = false ] && echo "configuration directory '${CONFD}' does not exist" >&2
         err "configuration directory '${CONFD}' does not exist"
         exit 1
     fi
 
     # Make sure IPTABLES and EBTABLES are present
-    if [ ! -f "${IPT4}" ]
+    if [ ! -f "${ipt4}" ]
     then
-        [ ${verbose} = true ] && echo "${IPT} missing"
+        [ ${silent} = false ] && echo "${IPT} missing" >&2
         err "${IPT} missing"
         exit 1
-    elif [ ${use_ipt6} = true ] && [ ! -f "${IPT6}" ]
+    elif [ ${use_ipt6} = true ] && [ ! -f "${ipt6}" ]
     then
-        [ ${verbose} = true ] && echo "${IPT6} missing"
-        err "${IPT6} missing"
+        [ ${silent} = false ] && echo "${ipt6} missing" >&2
+        err "${ipt6} missing"
         exit 1
-    elif [ ${use_ebt} = true ] && [ ! -f "${EBT}" ]
+    elif [ ${use_ebt} = true ] && [ ! -f "${ebt}" ]
     then
-        [ ${verbose} = true ] && echo "${EBT} missing"
-        err "${EBT} missing"
+        [ ${silent} = false ] && echo "${ebt} missing" >&2
+        err "${ebt} missing"
         exit 1
     fi
 }
 
 contains()
 {
-    local needle=$1
+    local needle=${1}
     declare -a haystack=("${!2}")
 
     for item in ${haystack[@]}
     do
-        if [ "$needle" == "$item" ]
+        if [ "${needle}" = "${item}" ]
         then
             return 0
         fi
@@ -116,16 +135,17 @@ valid_policy()
 clear_chains()
 {
     local chains=()
-    if [ $1 = "ipt4" ]
+    if [ ${1} = "ipt4" ]
     then
-        chains=$(${IPT4} -L|grep Chain|awk '{print $2}')
-        local tool=${IPT4}
-    elif [ $1 = "ipt6" ]
+        chains=$(${ipt4} -L|grep Chain|awk '{print $2}')
+        local tool=${ipt4}
+    elif [ ${1} = "ipt6" ]
     then
-        chains=$(${IPT6} -L|grep Chain|awk '{print $2}')
-        local tool=${IPT6}
+        chains=$(${ipt6} -L|grep Chain|awk '{print $2}')
+        local tool=${ipt6}
     else
-        err "clear_chains() cannot handle '$1'"
+        [ ${silent} = false ] && echo "clear_chains() cannot handle '${1}'" >&2
+        err "clear_chains() cannot handle '${1}'"
         exit 1
     fi
 
@@ -160,12 +180,12 @@ clear_chains()
         then
             if ! contains ${chain} standard[@]
             then
-                [ ${verbose} = true ] && echo "excluding chain '${chain}'"
+                [ ${verbose} = true -a ${silent} = false ] && echo "excluding chain '${chain}'"
                 info "excluding chain '${chain}'"
             fi
             continue
         fi
-        [ ${verbose} = true ] && echo "deleting chain '${chain}'"
+        [ ${verbose} = true -a ${silent} = false ] && echo "deleting chain '${chain}'"
         debug "flushing ${chain}"
         ${tool} -F ${chain}
         debug "deleting ${chain}"
@@ -176,23 +196,15 @@ clear_chains()
 # Remove all rules and chains
 remove_all()
 {
-    [ ${verbose} = true ] && echo "removing previous firewall rules.."
+    [ ${verbose} = true -a ${silent} = false ] && echo "removing previous firewall rules.."
     info "removing firewall rules"
     # IPv4
     clear_chains "ipt4"
-    #${IPT4} -t nat -F
-    #${IPT4} -t nat -X
-    #${IPT4} -t mangle -F
-    #${IPT4} -t mangle -X
 
     # IPv6
     if [ ${use_ipt6} = true ]
     then
         clear_chains "ipt6"
-        #${IPT6} -t nat -F
-        #${IPT6} -t nat -X
-        #${IPT6} -t mangle -F
-        #${IPT6} -t mangle -X
     fi
 }
 
@@ -201,7 +213,7 @@ load()
 {
     if [ ! $# -eq 1 ]
     then
-        [ ${verbose} = true ] && echo "attempted to load rule, but no file name was given"
+        [ ${silent} = false ] && echo "attempted to load rule, but no file name was given" >&2
         error "attempted to load rules, but no file name was given"
         exit 1
     fi
@@ -209,7 +221,7 @@ load()
     # Check for illegal characters
     if grep -qEe '.*;.*' -Ee '\$\(.*\)' -Ee '([&]|[|])' -Ee '[\`]' ${1}
     then
-        [ ${verbose} = true ] && echo "illegal characters detected in file."
+        [ ${verbose} = true -a ${silent} = false ] && echo "illegal characters detected in file."
         warn "illegal characters detected in file '${1}'"
     fi
 
@@ -235,21 +247,21 @@ start()
     sanity
 
     # Avoid lock out in case of error
-    ${IPT4} -P INPUT ACCEPT
-    ${IPT4} -P OUTPUT ACCEPT
-    ${IPT4} -P FORWARD ACCEPT
+    ${ipt4} -P INPUT ACCEPT
+    ${ipt4} -P OUTPUT ACCEPT
+    ${ipt4} -P FORWARD ACCEPT
     # IPv6
     if [ ${use_ipt6} = true ]
     then
-        ${IPT6} -P INPUT ACCEPT
-        ${IPT6} -P OUTPUT ACCEPT
-        ${IPT6} -P FORWARD ACCEPT
+        ${ipt6} -P INPUT ACCEPT
+        ${ipt6} -P OUTPUT ACCEPT
+        ${ipt6} -P FORWARD ACCEPT
     fi
 
     # Remove any previous rules or chains
     remove_all
 
-    [ ${verbose} = true ] && echo "setting up ipt-firewall.."
+    [ ${verbose} = true -a ${silent} = false ] && echo "setting up ipt-firewall.."
     info "setting up firewall"
 
     # Load all rules
@@ -257,53 +269,65 @@ start()
     do
         if [ -f "${file}" ]
         then
-            [ ${verbose} = true ] && echo "ipt-firewall loading file '${file}'"
+            [ ${verbose} = true -a ${silent} = false ] && echo "ipt-firewall loading file '${file}'"
             note "loading rules file '${file}'"
             load ${file}
         fi
     done
 
     # Drop everything not previously matched in default chains
-    ${IPT4} -A INPUT -j ${in_policy}
-    ${IPT4} -A OUTPUT -j ${out_policy}
-    ${IPT4} -A FORWARD -j ${forward_policy}
+    ${ipt4} -A INPUT -j ${in_policy}
+    ${ipt4} -A OUTPUT -j ${out_policy}
+    ${ipt4} -A FORWARD -j ${forward_policy}
     # IPv6
     if [ ${use_ipt6} = true ]
     then
-        ${IPT6} -A INPUT -j ${in_policy}
-        ${IPT6} -A OUTPUT -j ${out_policy}
-        ${IPT6} -A FORWARD -j ${forward_policy}
+        ${ipt6} -A INPUT -j ${in_policy}
+        ${ipt6} -A OUTPUT -j ${out_policy}
+        ${ipt6} -A FORWARD -j ${forward_policy}
     fi
 
-    [ ${verbose} = true ] && echo "ipt-firewall finished loading"
+    [ ${verbose} = true -a ${silent} = false ] && echo "ipt-firewall finished loading"
     note "firewall rules finished loading"
 }
 
 # getopt index variable
 OPTIND=1
-while getopts ":6eil:sI:F:O:h" opt; do
-    case $opt in
+while getopts ":6eil:VsI:F:O:hv" opt; do
+    case ${opt} in
         6)
             use_ipt6=true
-            IPT6="/sbin/ip6tables"
+            ipt6="/sbin/ip6tables"
             ;;
         e)
             use_ebt=true
-            EBT="/sbin/ebtables"
+            ebt="/sbin/ebtables"
             ;;
         i)
             log_illegal=true
             ;;
         l)
+            local valid_levels=(2 3 4 5 6)
+            if ! contains "${OPTARG}" valid_levels[@]
+            then
+               echo "Invalid log level '${OPTARG}', available 2-6" >&2
+               error "Invalid log level '${OPTARG}', available 2-6"
+               exit 1
+            fi
             log_level=${OPTARG}
+
+            ;;
+        V)
+            verbose=true
             ;;
         s)
-            verbose=false
+            silent=true
             ;;
         I)
             if ! valid_policy "${OPTARG}"
             then
                 echo "Invalid policy '${OPTARG}'" >&2
+                error "Invalid policy '${OPTARG}'"
                 exit 1
             fi
             in_policy=${OPTARG}
@@ -312,6 +336,7 @@ while getopts ":6eil:sI:F:O:h" opt; do
             if ! valid_policy "${OPTARG}"
             then
                 echo "Invalid policy '${OPTARG}'" >&2
+                error "Invalid policy '${OPTARG}'"
                 exit 1
             fi
             forward_policy=${OPTARG}
@@ -320,20 +345,29 @@ while getopts ":6eil:sI:F:O:h" opt; do
             if ! valid_policy "${OPTARG}"
             then
                 echo "Invalid policy '${OPTARG}'" >&2
+                error "Invalid policy '${OPTARG}'"
                 exit 1
             fi
             out_policy=${OPTARG}
             ;;
         h)
-            help
+            display_help
+            exit 0
+            ;;
+        v)
+            display_version
             exit 0
             ;;
         \?)
             echo "Invalid option: -${OPTARG}" >&2
+            error "Invalid option: -${OPTARG}"
+            display_help
             exit 1
             ;;
         :)
-            echo "Option -${OPTARG} requires an argument." >&2
+            echo "Option -${OPTARG} requires an argument" >&2
+            error "Option -${OPTARG} requires an argument"
+            display_help
             exit 1
             ;;
     esac
@@ -342,10 +376,10 @@ done
 # Remove all option arguments
 shift $(($OPTIND - 1))
 
-if [ $# = 0 ]
+if [ ${#} = 0 ]
 then
-    echo "no command specified"
-    help
+    error "No command specified"
+    display_help
     exit 1
 fi
 
@@ -354,14 +388,15 @@ case "${1}" in
         start
         ;;
     stop)
-        # Remove any rules or chains
         remove_all
         ;;
     restart)
         start
         ;;
     *)
-        echo "Usage: firewall {start|stop|restart}"
+        error "Unknown command '${1}'"
+        display_help
+        exit 1
         ;;
 esac
 
