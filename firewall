@@ -12,6 +12,10 @@ IPT4="/sbin/iptables"
 CONFD="/etc/firewall.d"
 CEXCL="chains.exclude"
 
+in_policy="DROP"
+out_policy="DROP"
+forward_policy="DROP"
+
 use_ebt=false
 use_ipt6=false
 
@@ -100,6 +104,13 @@ contains()
         fi
     done
     return 1
+}
+
+valid_policy()
+{
+    local policy=${1}
+    local valid=("ACCEPT" "DROP" "REJECT" "QUEUE")
+    return $(contains ${policy} valid[@])
 }
 
 clear_chains()
@@ -253,15 +264,15 @@ start()
     done
 
     # Drop everything not previously matched in default chains
-    ${IPT4} -A INPUT -j DROP
-    ${IPT4} -A OUTPUT -j DROP
-    ${IPT4} -A FORWARD -j DROP
+    ${IPT4} -A INPUT -j ${in_policy}
+    ${IPT4} -A OUTPUT -j ${out_policy}
+    ${IPT4} -A FORWARD -j ${forward_policy}
     # IPv6
     if [ ${use_ipt6} = true ]
     then
-        ${IPT6} -A INPUT -j DROP
-        ${IPT6} -A OUTPUT -j DROP
-        ${IPT6} -A FORWARD -j DROP
+        ${IPT6} -A INPUT -j ${in_policy}
+        ${IPT6} -A OUTPUT -j ${out_policy}
+        ${IPT6} -A FORWARD -j ${forward_policy}
     fi
 
     [ ${verbose} = true ] && echo "ipt-firewall finished loading"
@@ -270,7 +281,7 @@ start()
 
 # getopt index variable
 OPTIND=1
-while getopts ":6eil:sh" opt; do
+while getopts ":6eil:sI:F:O:h" opt; do
     case $opt in
         6)
             use_ipt6=true
@@ -288,6 +299,30 @@ while getopts ":6eil:sh" opt; do
             ;;
         s)
             verbose=false
+            ;;
+        I)
+            if ! valid_policy "${OPTARG}"
+            then
+                echo "Invalid policy '${OPTARG}'" >&2
+                exit 1
+            fi
+            in_policy=${OPTARG}
+            ;;
+        F)
+            if ! valid_policy "${OPTARG}"
+            then
+                echo "Invalid policy '${OPTARG}'" >&2
+                exit 1
+            fi
+            forward_policy=${OPTARG}
+            ;;
+        O)
+            if ! valid_policy "${OPTARG}"
+            then
+                echo "Invalid policy '${OPTARG}'" >&2
+                exit 1
+            fi
+            out_policy=${OPTARG}
             ;;
         h)
             help
