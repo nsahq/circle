@@ -78,16 +78,16 @@ sanity()
     # Must be root
     if [ "${EUID}" -ne 0 ]
     then
-        [ ${silent} = false ] && echo "firewall requires root privileges, exiting" >&2
-        err "firewall requires root privileges, aborting"
+        [ ${silent} = false ] && echo "Firewall requires root privileges, exiting" >&2
+        err "Firewall requires root privileges, aborting"
         exit 1
     fi
 
     # Make sure conf.d directory exists
     if [ ! -d "${CONFD}" ]
     then
-        [ ${silent} = false ] && echo "configuration directory '${CONFD}' does not exist" >&2
-        err "configuration directory '${CONFD}' does not exist"
+        [ ${silent} = false ] && echo "Configuration directory '${CONFD}' does not exist" >&2
+        err "Configuration directory '${CONFD}' does not exist"
         exit 1
     fi
 
@@ -180,15 +180,15 @@ clear_chains()
         then
             if ! contains ${chain} standard[@]
             then
-                [ ${verbose} = true -a ${silent} = false ] && echo "excluding chain '${chain}'"
-                info "excluding chain '${chain}'"
+                [ ${verbose} = true -a ${silent} = false ] && echo "Excluding chain '${chain}'"
+                info "Excluding chain '${chain}'"
             fi
             continue
         fi
-        [ ${verbose} = true -a ${silent} = false ] && echo "deleting chain '${chain}'"
-        debug "flushing ${chain}"
+        [ ${verbose} = true -a ${silent} = false ] && echo "Deleting chain '${chain}'"
+        debug "Flushing ${chain}"
         ${tool} -F ${chain}
-        debug "deleting ${chain}"
+        debug "Deleting ${chain}"
         ${tool} -X ${chain}
     done
 }
@@ -196,8 +196,8 @@ clear_chains()
 # Remove all rules and chains
 remove_all()
 {
-    [ ${verbose} = true -a ${silent} = false ] && echo "removing previous firewall rules.."
-    info "removing firewall rules"
+    [ ${verbose} = true -a ${silent} = false ] && echo "Removing previous firewall rules.."
+    info "Removing firewall rules"
     # IPv4
     clear_chains "ipt4"
 
@@ -213,16 +213,16 @@ load()
 {
     if [ ! $# -eq 1 ]
     then
-        [ ${silent} = false ] && echo "attempted to load rule, but no file name was given" >&2
-        error "attempted to load rules, but no file name was given"
+        [ ${silent} = false ] && echo "Attempted to load rule, but no file name was given" >&2
+        err "Attempted to load rules, but no file name was given"
         exit 1
     fi
 
     # Check for illegal characters
     if grep -qEe '.*;.*' -Ee '\$\(.*\)' -Ee '([&]|[|])' -Ee '[\`]' ${1}
     then
-        [ ${verbose} = true -a ${silent} = false ] && echo "illegal characters detected in file."
-        warn "illegal characters detected in file '${1}'"
+        [ ${verbose} = true -a ${silent} = false ] && echo "Illegal characters detected in file."
+        warn "Illegal characters detected in file '${1}'"
     fi
 
     if [ ${log_illegal} = true ]
@@ -230,14 +230,14 @@ load()
         # Log illegal lines
         while read -r line
         do
-            warn "illegal characters detected in line '${line}'"
+            warn "Illegal characters detected in line '${line}'"
         done < <(grep -Ee '.*;.*' -Ee '\$\(.*\)' -Ee '([&]|[|])' -Ee '[\`]' ${1})
     fi
 
     # Load lines that seem to be legal
     while read -r line
     do
-        debug "loading line '${line}'"
+        debug "Loading line '${line}'"
         eval ${line}
     done < <(grep -e "^\${" ${1}|grep -vEe ".*;.*" -vEe "\$\(.*\)" -vEe "([&]|[|])" -vEe "[\`]")
 }
@@ -246,7 +246,7 @@ start()
 {
     sanity
 
-    # Avoid lock out in case of error
+    # Avoid lock out in case of err
     ${ipt4} -P INPUT ACCEPT
     ${ipt4} -P OUTPUT ACCEPT
     ${ipt4} -P FORWARD ACCEPT
@@ -261,16 +261,16 @@ start()
     # Remove any previous rules or chains
     remove_all
 
-    [ ${verbose} = true -a ${silent} = false ] && echo "setting up ipt-firewall.."
-    info "setting up firewall"
+    [ ${verbose} = true -a ${silent} = false ] && echo "Setting up firewall.."
+    info "Setting up firewall"
 
     # Load all rules
     for file in ${CONFD}/*.rules
     do
         if [ -f "${file}" ]
         then
-            [ ${verbose} = true -a ${silent} = false ] && echo "ipt-firewall loading file '${file}'"
-            note "loading rules file '${file}'"
+            [ ${verbose} = true -a ${silent} = false ] && echo "Loading rule file '${file}'"
+            note "Loading rule file '${file}'"
             load ${file}
         fi
     done
@@ -287,8 +287,8 @@ start()
         ${ipt6} -A FORWARD -j ${forward_policy}
     fi
 
-    [ ${verbose} = true -a ${silent} = false ] && echo "ipt-firewall finished loading"
-    note "firewall rules finished loading"
+    [ ${verbose} = true -a ${silent} = false ] && echo "Finished loading rules"
+    info "Finished loading rules"
 }
 
 # getopt index variable
@@ -307,11 +307,11 @@ while getopts ":6eil:VsI:F:O:hv" opt; do
             log_illegal=true
             ;;
         l)
-            local valid_levels=(2 3 4 5 6)
+            valid_levels=(2 3 4 5 6)
             if ! contains "${OPTARG}" valid_levels[@]
             then
                echo "Invalid log level '${OPTARG}', available 2-6" >&2
-               error "Invalid log level '${OPTARG}', available 2-6"
+               err "Invalid log level '${OPTARG}', available 2-6"
                exit 1
             fi
             log_level=${OPTARG}
@@ -327,7 +327,7 @@ while getopts ":6eil:VsI:F:O:hv" opt; do
             if ! valid_policy "${OPTARG}"
             then
                 echo "Invalid policy '${OPTARG}'" >&2
-                error "Invalid policy '${OPTARG}'"
+                err "Invalid policy '${OPTARG}'"
                 exit 1
             fi
             in_policy=${OPTARG}
@@ -336,7 +336,7 @@ while getopts ":6eil:VsI:F:O:hv" opt; do
             if ! valid_policy "${OPTARG}"
             then
                 echo "Invalid policy '${OPTARG}'" >&2
-                error "Invalid policy '${OPTARG}'"
+                err "Invalid policy '${OPTARG}'"
                 exit 1
             fi
             forward_policy=${OPTARG}
@@ -345,7 +345,7 @@ while getopts ":6eil:VsI:F:O:hv" opt; do
             if ! valid_policy "${OPTARG}"
             then
                 echo "Invalid policy '${OPTARG}'" >&2
-                error "Invalid policy '${OPTARG}'"
+                err "Invalid policy '${OPTARG}'"
                 exit 1
             fi
             out_policy=${OPTARG}
@@ -360,13 +360,13 @@ while getopts ":6eil:VsI:F:O:hv" opt; do
             ;;
         \?)
             echo "Invalid option: -${OPTARG}" >&2
-            error "Invalid option: -${OPTARG}"
+            err "Invalid option: -${OPTARG}"
             display_help
             exit 1
             ;;
         :)
             echo "Option -${OPTARG} requires an argument" >&2
-            error "Option -${OPTARG} requires an argument"
+            err "Option -${OPTARG} requires an argument"
             display_help
             exit 1
             ;;
@@ -378,7 +378,7 @@ shift $(($OPTIND - 1))
 
 if [ ${#} = 0 ]
 then
-    error "No command specified"
+    err "No command specified"
     display_help
     exit 1
 fi
@@ -394,7 +394,7 @@ case "${1}" in
         start
         ;;
     *)
-        error "Unknown command '${1}'"
+        err "Unknown command '${1}'"
         display_help
         exit 1
         ;;
