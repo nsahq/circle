@@ -17,6 +17,7 @@ ipt4="/sbin/iptables"
 ipt6="null"
 ebt="null"
 
+true_policy=false
 in_policy="DROP"
 out_policy="DROP"
 forward_policy="DROP"
@@ -64,6 +65,7 @@ display_help()
     echo "    -I STR    Set INPUT chain policy"
     echo "    -F STR    Set FORWARD chain policy"
     echo "    -O STR    Set OUTPUT chain policy"
+    echo "    -P        Use true policy instead of pseudo-policy"
     echo "    -h        Show this help message and exit"
     echo "    -v        Show version and exit"
     echo ""
@@ -250,13 +252,24 @@ compile()
         fi
     fi
 
-    ipt4_lines+=('${ipt4} -P INPUT ACCEPT')
-    ipt4_lines+=('${ipt4} -P OUTPUT ACCEPT')
-    ipt4_lines+=('${ipt4} -P FORWARD ACCEPT')
+    if [ $true_policy = true ]
+    then
+        ipt4_lines+=("\${ipt4} -P INPUT ${in_policy}")
+        ipt4_lines+=("\${ipt4} -P OUTPUT ${out_policy}")
+        ipt4_lines+=("\${ipt4} -P FORWARD ${forward_policy}")
 
-    ipt6_lines+=('${ipt6} -P INPUT ACCEPT')
-    ipt6_lines+=('${ipt6} -P OUTPUT ACCEPT')
-    ipt6_lines+=('${ipt6} -P FORWARD ACCEPT')
+        ipt6_lines+=("\${ipt6} -P INPUT ${in_policy}")
+        ipt6_lines+=("\${ipt6} -P OUTPUT ${out_policy}")
+        ipt6_lines+=("\${ipt6} -P FORWARD ${forward_policy}")
+    else
+        ipt4_lines+=("\${ipt4} -P INPUT ACCEPT")
+        ipt4_lines+=("\${ipt4} -P OUTPUT ACCEPT")
+        ipt4_lines+=("\${ipt4} -P FORWARD ACCEPT")
+
+        ipt6_lines+=("\${ipt6} -P INPUT ACCEPT")
+        ipt6_lines+=("\${ipt6} -P OUTPUT ACCEPT")
+        ipt6_lines+=("\${ipt6} -P FORWARD ACCEPT")
+    fi
 
     for file in ${CONFD}/*.rules
     do
@@ -301,13 +314,16 @@ compile()
     done
 
     # Set pseudo-policies
-    ipt4_lines+=("\${ipt4} -A INPUT -j ${in_policy}")
-    ipt4_lines+=("\${ipt4} -A OUTPUT -j ${out_policy}")
-    ipt4_lines+=("\${ipt4} -A FORWARD -j ${forward_policy}")
+    if [ $true_policy = false ]
+    then
+        ipt4_lines+=("\${ipt4} -A INPUT -j ${in_policy}")
+        ipt4_lines+=("\${ipt4} -A OUTPUT -j ${out_policy}")
+        ipt4_lines+=("\${ipt4} -A FORWARD -j ${forward_policy}")
 
-    ipt6_lines+=("\${ipt6} -A INPUT -j ${in_policy}")
-    ipt6_lines+=("\${ipt6} -A OUTPUT -j ${out_policy}")
-    ipt6_lines+=("\${ipt6} -A FORWARD -j ${forward_policy}")
+        ipt6_lines+=("\${ipt6} -A INPUT -j ${in_policy}")
+        ipt6_lines+=("\${ipt6} -A OUTPUT -j ${out_policy}")
+        ipt6_lines+=("\${ipt6} -A FORWARD -j ${forward_policy}")
+    fi
 
     if [ ${output} = true ]
     then
@@ -361,7 +377,7 @@ start()
 
 # getopt index variable
 OPTIND=1
-while getopts ":6eil:VsI:F:O:hv" opt; do
+while getopts ":6eil:VsI:F:O:Phv" opt; do
     case ${opt} in
         6)
             use_ipt6=true
@@ -417,6 +433,9 @@ while getopts ":6eil:VsI:F:O:hv" opt; do
                 exit 1
             fi
             out_policy=${OPTARG}
+            ;;
+        P)
+            true_policy=true
             ;;
         h)
             display_help
