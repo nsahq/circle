@@ -8,7 +8,7 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
-VERSION="1.0.0"
+VERSION="1.1.0"
 
 CONFD="/etc/firewall.d"
 CEXCL="chains.exclude"
@@ -29,8 +29,13 @@ silent=false
 log_illegal=false
 log_level=4
 
+ipt4_lines=()
+ipt6_lines=()
+ebt_lines=()
+
 
 null(){ :; }
+count_args () { echo "$#"; }
 
 log()
 {
@@ -51,7 +56,7 @@ display_help()
     echo "Usage: $(basename ${BASH_SOURCE[0]}) [options] <command>"
     echo ""
     echo "    -6        Enable IP6TABLES"
-    echo "    -e        Enable EBTABLES"
+    echo "    -e        Enable ebtables"
     echo "    -i        Log illegal lines in source files"
     echo "    -l INT    Log level (2-6), default 4"
     echo "    -V        Be verbose"
@@ -63,6 +68,7 @@ display_help()
     echo "    -v        Show version and exit"
     echo ""
     echo "Commands:"
+    echo "    compile   compile and print rules"
     echo "    start     clear and load firewall rules"
     echo "    stop      clear rules"
     echo "    restart   alias for 'start'"
@@ -91,7 +97,7 @@ sanity()
         exit 1
     fi
 
-    # Make sure IPTABLES and EBTABLES are present
+    # Make sure iptables and ebtables are present
     if [ ! -f "${ipt4}" ]
     then
         [ ${silent} = false ] && echo "${IPT} missing" >&2
@@ -208,84 +214,146 @@ remove_all()
     fi
 }
 
-# Load rules
-load()
+display_rules()
 {
-    if [ ! $# -eq 1 ]
+    if [ ! $(count_args ${ipt4_lines[@]+"${ipt4_lines[@]}"}) = 0 ]
     then
-        [ ${silent} = false ] && echo "Attempted to load rule, but no file name was given" >&2
-        err "Attempted to load rules, but no file name was given"
-        exit 1
+        echo "# iptables"
+        for item in "${ipt4_lines[@]}" ; do echo "${item}" ; done
+        echo ""
     fi
 
-    # Check for illegal characters
-    if grep -qEe '.*;.*' -Ee '\$\(.*\)' -Ee '([&]|[|])' -Ee '[\`]' ${1}
+    if [ ! $(count_args ${ipt6_lines[@]+"${ipt6_lines[@]}"}) = 0 ]
     then
-        [ ${verbose} = true -a ${silent} = false ] && echo "Illegal characters detected in file."
-        warn "Illegal characters detected in file '${1}'"
+        echo "# ip6tables"
+        for item in "${ipt6_lines[@]}" ; do echo "${item}" ; done
+        echo ""
     fi
 
-    if [ ${log_illegal} = true ]
+    if [ ! $(count_args ${ebt_lines[@]+"${ebt_lines[@]}"}) = 0 ]
     then
-        # Log illegal lines
-        while read -r line
-        do
-            warn "Illegal characters detected in line '${line}'"
-        done < <(grep -Ee '.*;.*' -Ee '\$\(.*\)' -Ee '([&]|[|])' -Ee '[\`]' ${1})
+        echo "# ebtables"
+        for item in "${ebt_lines[@]}" ; do echo "${item}" ; done
+        echo ""
+    fi
+}
+
+compile()
+{
+    local output=true
+
+    if [ ${#} -gt 0 ]
+    then
+        if [ ${1} = false ]
+        then
+            output=false
+        fi
     fi
 
-    # Load lines that seem to be legal
-    while read -r line
+    ipt4_lines+=('${ipt4} -P INPUT ACCEPT')
+    ipt4_lines+=('${ipt4} -P OUTPUT ACCEPT')
+    ipt4_lines+=('${ipt4} -P FORWARD ACCEPT')
+
+    ipt6_lines+=('${ipt6} -P INPUT ACCEPT')
+    ipt6_lines+=('${ipt6} -P OUTPUT ACCEPT')
+    ipt6_lines+=('${ipt6} -P FORWARD ACCEPT')
+
+    for file in ${CONFD}/*.rules
     do
-        debug "Loading line '${line}'"
-        eval ${line}
-    done < <(grep -e "^\${" ${1}|grep -vEe ".*;.*" -vEe "\$\(.*\)" -vEe "([&]|[|])" -vEe "[\`]")
+        if [ -f "${file}" ]
+        then
+            [ ${verbose} = true -a ${silent} = false ] && echo "Parsing rule file '${file}'"
+            note "Parsing rule file '${file}'"
+
+            # Check for illegal characters
+            if grep -qEe '.*;.*' -Ee '\$\(.*\)' -Ee '([&]|[|])' -Ee '[\`]' ${file}
+            then
+                [ ${verbose} = true -a ${silent} = false ] && echo "Illegal characters detected in file."
+                warn "Illegal characters detected in file '${file}'"
+            fi
+
+            if [ ${log_illegal} = true ]
+            then
+                # Log illegal lines
+                while read -r line
+                do
+                    warn "Illegal characters detected in line '${line}'"
+                done < <(grep -Ee '.*;.*' -Ee '\$\(.*\)' -Ee '([&]|[|])' -Ee '[\`]' ${file})
+            fi
+
+            # Extract lines that seem to be legal
+            while read -r line
+            do
+                debug "Extracting line '${line}'"
+                case $(echo ${line}|awk '{print $1}') in
+                    '${ipt4}')
+                        ipt4_lines+=("${line}")
+                        ;;
+                    '${ipt6}')
+                        ipt6_lines+=("${line}")
+                        ;;
+                    '${ebt}')
+                        local ebt_lines=("${ebt_lines[@]-}" "${line}")
+                        ;;
+                esac
+            done < <(grep -e "^\${" ${file}|grep -vEe ".*;.*" -vEe "\$\(.*\)" -vEe "([&]|[|])" -vEe "[\`]")
+        fi
+    done
+
+    # Set pseudo-policies
+    ipt4_lines+=("\${ipt4} -A INPUT -j ${in_policy}")
+    ipt4_lines+=("\${ipt4} -A OUTPUT -j ${out_policy}")
+    ipt4_lines+=("\${ipt4} -A FORWARD -j ${forward_policy}")
+
+    ipt6_lines+=("\${ipt6} -A INPUT -j ${in_policy}")
+    ipt6_lines+=("\${ipt6} -A OUTPUT -j ${out_policy}")
+    ipt6_lines+=("\${ipt6} -A FORWARD -j ${forward_policy}")
+
+    if [ ${output} = true ]
+    then
+        display_rules
+    fi
+}
+
+load_rules()
+{
+    if [ ! $(count_args ${ipt4_lines[@]+"${ipt4_lines[@]}"}) = 0 ]
+    then
+        echo "Loading iptables rules"
+        note "Loading iptables rules"
+        for item in "${ipt4_lines[@]}" ; do eval "${item}" ; done
+    fi
+
+    if [ ! $(count_args ${ipt6_lines[@]+"${ipt6_lines[@]}"}) = 0 -a ! ${use_ipt6} = false ]
+    then
+        echo "Loading ip6tables rules"
+        note "Loading ip6tables rules"
+        for item in "${ipt6_lines[@]}" ; do eval "${item}" ; done
+    fi
+
+    if [ ! $(count_args ${ebt_lines[@]+"${ebt_lines[@]}"}) = 0 -a ! ${use_ebt} = false ]
+    then
+        echo "Loading ebtables rules"
+        note "Loading ebtables rules"
+        for item in "${ebt_lines[@]}" ; do eval "${item}" ; done
+    fi
 }
 
 start()
 {
     sanity
 
-    # Avoid lock out in case of err
-    ${ipt4} -P INPUT ACCEPT
-    ${ipt4} -P OUTPUT ACCEPT
-    ${ipt4} -P FORWARD ACCEPT
-    # IPv6
-    if [ ${use_ipt6} = true ]
-    then
-        ${ipt6} -P INPUT ACCEPT
-        ${ipt6} -P OUTPUT ACCEPT
-        ${ipt6} -P FORWARD ACCEPT
-    fi
-
     # Remove any previous rules or chains
     remove_all
+
+    # Compile rules without output
+    compile false
 
     [ ${verbose} = true -a ${silent} = false ] && echo "Setting up firewall.."
     info "Setting up firewall"
 
     # Load all rules
-    for file in ${CONFD}/*.rules
-    do
-        if [ -f "${file}" ]
-        then
-            [ ${verbose} = true -a ${silent} = false ] && echo "Loading rule file '${file}'"
-            note "Loading rule file '${file}'"
-            load ${file}
-        fi
-    done
-
-    # Drop everything not previously matched in default chains
-    ${ipt4} -A INPUT -j ${in_policy}
-    ${ipt4} -A OUTPUT -j ${out_policy}
-    ${ipt4} -A FORWARD -j ${forward_policy}
-    # IPv6
-    if [ ${use_ipt6} = true ]
-    then
-        ${ipt6} -A INPUT -j ${in_policy}
-        ${ipt6} -A OUTPUT -j ${out_policy}
-        ${ipt6} -A FORWARD -j ${forward_policy}
-    fi
+    load_rules
 
     [ ${verbose} = true -a ${silent} = false ] && echo "Finished loading rules"
     info "Finished loading rules"
@@ -384,6 +452,9 @@ then
 fi
 
 case "${1}" in
+    compile)
+        compile
+        ;;
     start)
         start
         ;;
