@@ -1,22 +1,21 @@
-.TH IPT-FIREWALL 8 "" "February 2016" "ipt-firewall 1.0.0"
+.TH ipt-FIREWALL 8 "" "February 2016" "ipt-firewall 1.1.0"
 .SH NAME
-ipt-firewall \- simple firewall
+ipt-firewall \- simple firewall manager
 .SH SYNOPSIS
 \fBipt-firewall\fP [\fBOPTIONS\fP] \fBCOMMAND\fP
-.SH DESCRIPTION
+.SH DESCRiptION
 \fBipt-firewall\fP is a simple iptables/ip6tables and ebtables control script
-that clears previous rules and sets up a firewall from user defined rule
-files.
+that clears previous rules and sets up a firewall from user defined rule files.
 .SH RULES
 Rule files (files ending with \fI.rules\fP) are read from
 \fI\/etc/firewall.d/\fP and each line evaluated before added as a firewall rule.
 Only lines starting with ${ are used, and any lines containing any of the
-patterns \fI.*;.*\fP, \fI\\$\(.*\)\fP, \fI([&]|[|])\fP, \fI[\\`]\fP is discarded
-(and produces a log message and/or warning depending on options used).
+patterns \fI.*;.*\fP, \fI\\$(.*)\fP, \fI([&]|[|])\fP, \fI[\\`]\fP are discarded
+(and produce a log message and/or warning depending on options used).
 .PP
-A rule that would normally start with \fB/sbin/iptables\fP or \fBiptables\fP
-should be defined with \fB${IPT4}\fP instead. \fBip6tables\fP and
-\fBebtables\fP respectively should use \fB${IPT6}\fP and \fB${EBT}\fP.
+A rule that would normally start with \fBiptables\fP should be defined with
+\fB${ipt4}\fP instead. \fBip6tables\fP and \fBebtables\fP respectively should
+use \fB${ipt6}\fP and \fB${ebt}\fP.
 .SH EXCLUSIONS
 Chains that are handled by another application or for any other reason should
 not be flushed and destroyed by \fBipt-firewall\fP can be excluded in
@@ -49,25 +48,42 @@ Verbose, show all available output.
 Silent, output nothing but a few error messages.
 .TP
 .B \-I POLICY
-Set a pseudo-policy for the INPUT chain. The actual policy of the built in
+Set a pseudo-policy for the INPUT chain. The actual policy of the built-in
 chains remain ACCEPT, but after loading all rules the chain is appended with
-\'\-A INPUT \-j \fBPOLICY\fP\'.
+\'\-A INPUT \-j \fBPOLICY\fP\'. Default is DROP.
 .TP
 .B \-F POLICY
-Set a pseudo-policy for the FORWARD chain. The actual policy of the built in
+Set a pseudo-policy for the FORWARD chain. The actual policy of the built-in
 chains remain ACCEPT, but after loading all rules the chain is appended with
-\'\-A FORWARD \-j \fBPOLICY\fP\'.
+\'\-A FORWARD \-j \fBPOLICY\fP\'. Default is DROP.
 .TP
 .B \-O POLICY
-Set a pseudo-policy for the OUTPUT chain. The actual policy of the built in
+Set a pseudo-policy for the OUTPUT chain. The actual policy of the built-in
 chains remain ACCEPT, but after loading all rules the chain is appended with
-\'\-A OUTPUT \-j \fBPOLICY\fP\'.
+\'\-A OUTPUT \-j \fBPOLICY\fP\'. Default is DROP.
+.TP
+.B \-P
+Set actual policy instead of pseudo-policy. Modifies options \fB-I\fR, \fB-F\fR,
+\fB-O\fR.
 .TP
 .B \-h
-Show help and exit
+Show help and exit.
 .TP
 .B \-v
-Show version and exit
-
+Show version and exit.
+.SH COMMANDS
+.TP
+.B compile
+Parse rule files and print the compiled results grouped by tool into stdout.
+.TP
+.B start
+Clear rules and destroy chains, then parse rule files and load the compiled
+rules into respective tool.
+.TP
+.B stop
+Clear rules and destroy chains.
+.TP
+.B restart
+Alias for start.
 .SH SEE ALSO
 iptables(8), ip6tables(8), ebtables(8)
