@@ -42,7 +42,7 @@ log()
 {
     if [ ${1} -le "${log_level}" ]
     then
-        logger -t ipt-firewall "${2}"
+        logger -t circle "${2}"
     fi
 }
 

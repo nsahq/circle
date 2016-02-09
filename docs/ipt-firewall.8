@@ -1,10 +1,10 @@
-.TH ipt-firewall 8 "" "February 2016" "ipt-firewall 1.1.0"
+.TH circle 8 "" "February 2016" "circle 1.1.0"
 .SH NAME
-ipt-firewall \- simple firewall manager
+circle \- simple firewall manager
 .SH SYNOPSIS
-\fBipt-firewall\fP [\fBOPTIONS\fP] \fBCOMMAND\fP
+\fBcircle\fP [\fBOPTIONS\fP] \fBCOMMAND\fP
 .SH DESCRIPTION
-\fBipt-firewall\fP is a simple iptables/ip6tables and ebtables control script
+\fBcircle\fP is a simple iptables/ip6tables and ebtables control script
 that clears previous rules and sets up a firewall from user defined rule files.
 .SH RULES
 Rule files (files ending with \fI.rules\fP) are read from
@@ -18,7 +18,7 @@ A rule that would normally start with \fBiptables\fP should be defined with
 use \fB${ipt6}\fP and \fB${ebt}\fP.
 .SH EXCLUSIONS
 Chains that are handled by another application or for any other reason should
-not be flushed and destroyed by \fBipt-firewall\fP can be excluded in
+not be flushed and destroyed by \fBcircle\fP can be excluded in
 \fIipt4-chains.exclude\fP and/or \fIipt6-chains.exclude\fP under
 \fI/etc/firewall.d/\fP. These files takes the name of one chain per line.
 .SH OPTIONS

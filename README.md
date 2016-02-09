@@ -1,13 +1,13 @@
-ipt-firewall
+circle
 ============
 
-ipt-firewall is a simple iptables/ip6tables and ebtables control script that
+circle is a simple iptables/ip6tables and ebtables control script that
 clears previous rules and sets up a firewall from user defined rule files.
 
 ebtables support is currently experimental.
 
 ```
-Usage: firewall [options] <command>
+Usage: circle [options] <command>
 
     -6        Enable IP6TABLES
     -e        Enable ebtables
@@ -46,7 +46,7 @@ instead. ip6tables and ebtables respectively should use ${ipt6} and ${ebt}.
 ### Exclusions
 
 Chains that are handled by another application or for any other reason should
-not be flushed and destroyed by ipt-firewall can be excluded in
+not be flushed and destroyed by circle can be excluded in
 ```ipt4-chains.exclude``` and/or ```ipt6-chains.exclude``` under
 ```/etc/firewall.d/```. These files takes the name of one chain per line.
 
