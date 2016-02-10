@@ -33,7 +33,7 @@ Commands:
 Rules
 -----
 
-Rule files (files ending with .rules) are read from etc/firewall.d/ and each
+Rule files (files ending with .rules) are read from etc/circle.d/ and each
 line evaluated before added as a firewall rule. Only lines starting with ${ are
 used, and any lines containing any of the patterns ```.*;.*,``` ```\$(.*)```,
 ```([&]|[|])```, ```[\`]``` are discarded (and produce a log message and/or
@@ -48,7 +48,7 @@ instead. ip6tables and ebtables respectively should use ${ipt6} and ${ebt}.
 Chains that are handled by another application or for any other reason should
 not be flushed and destroyed by circle can be excluded in
 ```ipt4-chains.exclude``` and/or ```ipt6-chains.exclude``` under
-```/etc/firewall.d/```. These files takes the name of one chain per line.
+```/etc/circle.d/```. These files takes the name of one chain per line.
 
 
 OPTIONS
