@@ -10,7 +10,7 @@ set -o nounset
 
 VERSION="1.1.0"
 
-CONFD="/etc/firewall.d"
+CONFD="/etc/circle.d"
 CEXCL="chains.exclude"
 
 ipt4="/sbin/iptables"
