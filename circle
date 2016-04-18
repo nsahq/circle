@@ -8,14 +8,22 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
-VERSION="1.1.0"
+VERSION="1.1.1"
+
+bname="$(basename ${BASH_SOURCE[0]})"
 
 CONFD="/etc/circle.d"
 CEXCL="chains.exclude"
 
-ipt4="/sbin/iptables"
-ipt6="null"
-ebt="null"
+ipt4_bin="/sbin/iptables"
+ipt6_bin="null"
+ebt_bin="null"
+
+ipt4_opts="-w"
+ipt6_opts="-w"
+ebt_opts=""
+
+ipt4="${ipt4_bin} ${ipt4_opts}"
 
 true_policy=false
 in_policy="DROP"
@@ -54,12 +62,12 @@ err(){ log 2 "ERROR: ${1}"; }
 
 display_help()
 {
-    echo "Usage: $(basename ${BASH_SOURCE[0]}) [options] <command>"
+    echo "Usage: ${bname} [options] <command>"
     echo ""
-    echo "    -6        Enable IP6TABLES"
+    echo "    -6        Enable ip6tables"
     echo "    -e        Enable ebtables"
     echo "    -i        Log illegal lines in source files"
-    echo "    -l INT    Log level (2-6), default 4"
+    echo "    -l INT    Log level (2-6), default 4 (0 to disable)"
     echo "    -V        Be verbose"
     echo "    -s        Be silent"
     echo "    -I STR    Set INPUT chain policy"
@@ -78,7 +86,7 @@ display_help()
 
 display_version()
 {
-    echo "$(basename ${BASH_SOURCE[0]}) v${VERSION}"
+    echo "${bname} v${VERSION}"
 }
 
 sanity()
@@ -86,8 +94,8 @@ sanity()
     # Must be root
     if [ "${EUID}" -ne 0 ]
     then
-        [ ${silent} = false ] && echo "Firewall requires root privileges, exiting" >&2
-        err "Firewall requires root privileges, aborting"
+        [ ${silent} = false ] && echo "${bname} requires root privileges, exiting" >&2
+        err "${bname} requires root privileges, aborting"
         exit 1
     fi
 
@@ -100,20 +108,20 @@ sanity()
     fi
 
     # Make sure iptables and ebtables are present
-    if [ ! -f "${ipt4}" ]
+    if [ ! -f "${ipt4_bin}" ]
     then
-        [ ${silent} = false ] && echo "${IPT} missing" >&2
-        err "${IPT} missing"
+        [ ${silent} = false ] && echo "${ipt4_bin} missing" >&2
+        err "${ipt4_bin} missing"
         exit 1
-    elif [ ${use_ipt6} = true ] && [ ! -f "${ipt6}" ]
+    elif [ ${use_ipt6} = true ] && [ ! -f "${ipt6_bin}" ]
     then
-        [ ${silent} = false ] && echo "${ipt6} missing" >&2
-        err "${ipt6} missing"
+        [ ${silent} = false ] && echo "${ipt6_bin} missing" >&2
+        err "${ipt6_bin} missing"
         exit 1
-    elif [ ${use_ebt} = true ] && [ ! -f "${ebt}" ]
+    elif [ ${use_ebt} = true ] && [ ! -f "${ebt_bin}" ]
     then
-        [ ${silent} = false ] && echo "${ebt} missing" >&2
-        err "${ebt} missing"
+        [ ${silent} = false ] && echo "${ebt_bin} missing" >&2
+        err "${ebt_bin} missing"
         exit 1
     fi
 }
@@ -381,21 +389,23 @@ while getopts ":6eil:VsI:F:O:Phv" opt; do
     case ${opt} in
         6)
             use_ipt6=true
-            ipt6="/sbin/ip6tables"
+            ipt6_bin="/sbin/ip6tables"
+            ipt6="${ipt6_bin} ${ipt6_opts}"
             ;;
         e)
             use_ebt=true
-            ebt="/sbin/ebtables"
+            ebt_bin="/sbin/ebtables"
+            ebt="${ebt_bin} ${ebt_opts}"
             ;;
         i)
             log_illegal=true
             ;;
         l)
-            valid_levels=(2 3 4 5 6)
+            valid_levels=(0 2 3 4 5 6)
             if ! contains "${OPTARG}" valid_levels[@]
             then
-               echo "Invalid log level '${OPTARG}', available 2-6" >&2
-               err "Invalid log level '${OPTARG}', available 2-6"
+               echo "Invalid log level '${OPTARG}', available 0, 2-6" >&2
+               err "Invalid log level '${OPTARG}', available 0, 2-6"
                exit 1
             fi
             log_level=${OPTARG}

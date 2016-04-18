@@ -12,7 +12,7 @@ Usage: circle [options] <command>
     -6        Enable IP6TABLES
     -e        Enable ebtables
     -i        Log illegal lines in source files
-    -l INT    Log level (2-6), default 4
+    -l INT    Log level (2-6), default 4 (0 to disable)
     -V        Be verbose
     -s        Be silent
     -I STR    Set INPUT chain policy
@@ -62,13 +62,15 @@ OPTIONS
    -i     Log illegal lines encountered in rule files.
 
    -l LEVEL
-          Set log level to LEVEL. Allowed values are 2-6, default is 4. Levels
-          are inclusive with all lower levels. The numbers correspond to:
+          Set log level to LEVEL. Allowed values are 0, 2-6. 0 disables logging,
+          default is 4. Levels are inclusive with all lower levels. The numbers
+          correspond to:
               6 debug
               5 notice
               4 info
               3 warning
               2 error
+              0 disabled
 
    -V     Verbose, show all available output.
 
