@@ -1,0 +1,14 @@
+[Unit]
+Description=Circle firewall
+Before=network.target
+After=syslog.target
+
+[Service]
+ExecStart=/usr/sbin/circle -Vl 0 start
+ExecReload=/usr/sbin/circle -Vl 0 restart
+ExecStop=/usr/sbin/circle -Vl 0 stop
+Type=oneshot
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
